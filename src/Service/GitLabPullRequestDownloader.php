@@ -21,8 +21,12 @@ class GitLabPullRequestDownloader extends DownloaderBase
 
     private string $token = '';
 
+    private GitShellService $gitShell;
+
     public function download(Patch $patch): void
     {
+        $this->gitShell = $this->createGitShellService();
+
         if ($this->shouldSkipDownload($patch)) {
             return;
         }
@@ -37,6 +41,11 @@ class GitLabPullRequestDownloader extends DownloaderBase
         } catch (\Exception $e) {
             throw new RuntimeException("Failed to process GitLab MR: " . $e->getMessage(), 0, $e);
         }
+    }
+
+    private function createGitShellService(): GitShellService
+    {
+        return new GitShellService();
     }
 
     private function shouldSkipDownload(Patch $patch): bool
@@ -78,7 +87,7 @@ class GitLabPullRequestDownloader extends DownloaderBase
         $diffOutput = $this->createDiff($gitRemoteContext);
         $this->savePatch($patch, $diffOutput);
 
-        $this->removeRemote($gitRemoteContext);
+        $this->gitShell->removeRemote($gitRemoteContext);
     }
 
     private function createGitRemoteContext(Patch $patch, GitLabMergeRequestInfo $mrInfo): GitRemoteContext
@@ -97,55 +106,14 @@ class GitLabPullRequestDownloader extends DownloaderBase
             IOInterface::VERBOSE,
         );
 
-        $cmd = sprintf(
-            'cd %s && (git remote rm %s 2>&1 || true) && git remote add %s %s 2>&1 && git fetch %s %s 2>&1',
-            escapeshellarg($gitRemoteContext->packagePath),
-            $gitRemoteContext->remoteName,
-            $gitRemoteContext->remoteName,
-            escapeshellarg($gitRemoteContext->authorizedRepoUrl),
-            $gitRemoteContext->remoteName,
-            escapeshellarg($gitRemoteContext->sourceBranch)
-        );
-
-        $this->runShellCommand($cmd, "Failed to add remote");
+        $this->gitShell->addRemoteAndFetch($gitRemoteContext);
     }
 
     private function createDiff(GitRemoteContext $gitRemoteContext): string
     {
         $this->io->write("      - Building diff", true, IOInterface::VERBOSE);
 
-        $cmd = sprintf(
-            'cd %s && git diff ...%s/%s 2>&1',
-            escapeshellarg($gitRemoteContext->packagePath),
-            $gitRemoteContext->remoteName,
-            escapeshellarg($gitRemoteContext->sourceBranch),
-        );
-
-        // Get raw multiline string with all characters (including trailing spaces) intact
-        $diffOutput = shell_exec($cmd);
-
-        // Only to detect execution failures
-        $this->runShellCommand($cmd, "Failed to create diff");
-
-        return $diffOutput;
-    }
-
-    private function removeRemote(GitRemoteContext $gitRemoteContext): void
-    {
-        $cmd = sprintf(
-            'cd %s && git remote rm %s 2>&1',
-            escapeshellarg($gitRemoteContext->packagePath),
-            $gitRemoteContext->remoteName,
-        );
-        $this->runShellCommand($cmd, "Failed to drop remote");
-    }
-
-    private function runShellCommand(string $command, string $errorMessage): void
-    {
-        exec($command, $output, $returnCode);
-        if ($returnCode !== 0) {
-            throw new RuntimeException("$errorMessage: " . implode("\n", $output));
-        }
+        return $this->gitShell->createDiff($gitRemoteContext);
     }
 
     private function savePatch(Patch $patch, string $diff): void
