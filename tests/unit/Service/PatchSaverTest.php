@@ -17,8 +17,10 @@ class PatchSaverTest extends TestCase
 
     protected function tearDown(): void
     {
-        array_map('unlink', glob("{$this->tempDir}/*.patch"));
-        rmdir($this->tempDir);
+        if (is_dir($this->tempDir)) {
+            array_map('unlink', glob("{$this->tempDir}/*.patch"));
+            @rmdir($this->tempDir);
+        }
     }
 
     public function testSavesPatchToFile(): void

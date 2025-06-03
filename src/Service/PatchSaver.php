@@ -19,8 +19,10 @@ final class PatchSaver
             mkdir($this->baseDir, 0755, true);
         }
 
-        $filename = uniqid($this->baseDir, true) . ".patch";
-        file_put_contents($filename, $diff);
+        $filename = uniqid($this->baseDir) . ".patch";
+        if (file_put_contents($filename, $diff) === false) {
+            throw new \RuntimeException("Failed to write patch file: {$filename}");
+        }
 
         $patch->localPath = $filename;
         $patch->sha256 = hash_file('sha256', $filename);
