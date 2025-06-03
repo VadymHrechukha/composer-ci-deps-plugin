@@ -30,9 +30,14 @@ class GitShellService
             escapeshellarg($ctx->sourceBranch)
         );
 
+        // Get raw multiline string with all characters (including trailing spaces) intact
         $diff = shell_exec($cmd);
-        if ($diff === false || trim($diff) === '') {
-            throw new RuntimeException("Failed to create diff or empty output");
+
+        // Only to detect execution failures
+        $this->runShellCommand($cmd, "Failed to create diff");
+
+        if (trim($diff) === '') {
+            throw new RuntimeException("Empty diff output - no changes detected");
         }
 
         return $diff;
