@@ -34,7 +34,7 @@ class GitLabPullRequestDownloader extends DownloaderBase
 
         try {
             $diff = $this->fetchDiff($patch, $mrInfo);
-            $this->savePatch($patch, $diff);
+            (new PatchSaver())->save($patch, $diff);
         } catch (\Exception $e) {
             throw new RuntimeException("Failed to process GitLab MR: " . $e->getMessage(), 0, $e);
         }
@@ -103,19 +103,5 @@ class GitLabPullRequestDownloader extends DownloaderBase
         $this->io->write("      - Building diff", true, IOInterface::VERBOSE);
 
         return $gitShell->createDiff($gitRemoteContext);
-    }
-
-    private function savePatch(Patch $patch, string $diff): void
-    {
-        $dir = sys_get_temp_dir() . '/composer-patches/';
-        if (!is_dir($dir)) {
-            mkdir($dir);
-        }
-
-        $filename = uniqid($dir) . ".patch";
-        file_put_contents($filename, $diff);
-
-        $patch->localPath = $filename;
-        $patch->sha256 = hash_file('sha256', $filename);
     }
 }
