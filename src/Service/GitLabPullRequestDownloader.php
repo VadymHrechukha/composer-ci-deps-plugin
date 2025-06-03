@@ -84,8 +84,8 @@ class GitLabPullRequestDownloader extends DownloaderBase
                 escapeshellarg($sourceBranch),
             );
 
-            exec($diffCommand, $diffOutput, $diffReturnCode);
-            if ($diffReturnCode !== 0) {
+            $diffOutput = shell_exec($diffCommand);
+            if (!$diffOutput) {
                 throw new RuntimeException("Failed to create diff: " . implode("\n", $diffOutput));
             }
 
@@ -105,7 +105,7 @@ class GitLabPullRequestDownloader extends DownloaderBase
         }
     }
 
-    private function savePatch(Patch $patch, array $diffOutput): void
+    private function savePatch(Patch $patch, string $diffOutput): void
     {
         $patches_dir = sys_get_temp_dir() . '/composer-patches/';
         $filename = uniqid($patches_dir) . ".patch";
@@ -113,7 +113,7 @@ class GitLabPullRequestDownloader extends DownloaderBase
             mkdir($patches_dir);
         }
 
-        file_put_contents($filename, implode("\n", $diffOutput) . "\n");
+        file_put_contents($filename, $diffOutput);
         $patch->localPath = $filename;
         $patch->sha256 = hash_file('sha256', $filename);
     }
