@@ -16,7 +16,7 @@ final class PatchSaver
     public function save(Patch $patch, string $diff): void
     {
         if (!is_dir($this->baseDir)) {
-            mkdir($this->baseDir);
+            mkdir($this->baseDir, 0755, true);
         }
 
         $filename = uniqid($this->baseDir, true) . ".patch";
