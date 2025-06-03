@@ -1,5 +1,4 @@
-<?php
-declare(strict_types=1);
+<?php declare(strict_types=1);
 
 namespace hiqdev\ComposerCiDeps\Service;
 
@@ -19,141 +18,147 @@ use RuntimeException;
 class GitLabPullRequestDownloader extends DownloaderBase
 {
     private Client $client;
-    private string $token = "";
+
+    private string $token = '';
 
     public function download(Patch $patch): void
     {
-        // Don't need to re-download a patch if it has already been downloaded.
-        if (isset($patch->localPath) && !empty($patch->localPath)) {
-            return;
-        }
-
-        if (!isset($patch->extra['gitlab'])) {
+        if ($this->shouldSkipDownload($patch)) {
             return;
         }
 
         $this->client = $this->createGitLabClient();
-        if (empty($patch->url)) {
-            return;
-        }
+
+        $mrInfo = $this->parseGitLabUrl($patch->url);
+        $this->client->setUrl("https://{$mrInfo->host}");
 
         try {
-            $urlInfo = $this->parseGitLabUrl($patch->url);
-
-            $this->client->setUrl('https://' . $urlInfo['host']);
-
-            $mr = $this->client->mergeRequests()->show($urlInfo['project_path'], $urlInfo['mr_iid']);
-            if (!$mr) {
-                throw new RuntimeException("Could not find merge request #{$urlInfo['mr_iid']} in project {$urlInfo['project_path']}");
-            }
-
-            $sourceBranch = $mr['source_branch'];
-            $sourceProjectId = $mr['source_project_id'];
-
-            $project = $this->client->projects()->show($sourceProjectId);
-            $httpUrlToRepo = $project['http_url_to_repo'];
-            $authorizedHttpRepoUrl = str_replace('https://', "https://git:{$this->token}@", $httpUrlToRepo);
-
-            $installedPackagePath = $this->getInstalledPackagePath($patch);
-            $remoteName = 'mr_' . $urlInfo['mr_iid'];
-
-            $this->io->write("      - Fetching PR {$urlInfo['mr_iid']} from {$urlInfo['project_path']}", true, IOInterface::VERBOSE);
-            $prepareRemoteCommand = sprintf(
-                'cd %s && (git remote rm %s 2>&1 || true) && git remote add %s %s 2>&1 && git fetch %s %s 2>&1',
-                escapeshellarg($installedPackagePath),
-                $remoteName,
-                $remoteName,
-                escapeshellarg($authorizedHttpRepoUrl),
-                $remoteName,
-                escapeshellarg($sourceBranch)
-            );
-            exec($prepareRemoteCommand, $output, $returnCode);
-            if ($returnCode !== 0) {
-                throw new RuntimeException("Failed to add remote: " . implode("\n", $output));
-            }
-
-            $this->io->write(
-                "      - Building diff for PR {$urlInfo['mr_iid']} from {$urlInfo['project_path']}",
-                true,
-                IOInterface::VERBOSE
-            );
-            $diffCommand = sprintf(
-                'cd %s && git diff ...%s/%s 2>&1',
-                escapeshellarg($installedPackagePath),
-                $remoteName,
-                escapeshellarg($sourceBranch),
-            );
-
-            $diffOutput = shell_exec($diffCommand);
-            if (!$diffOutput) {
-                throw new RuntimeException("Failed to create diff: " . implode("\n", $diffOutput));
-            }
-
-            $this->savePatch($patch, $diffOutput);
-
-            $dropRemoteCommand = sprintf(
-                'cd %s && git remote rm %s 2>&1',
-                escapeshellarg($installedPackagePath),
-                $remoteName
-            );
-            exec($dropRemoteCommand, $output, $returnCode);
-            if ($returnCode !== 0) {
-                throw new RuntimeException("Failed to drop remote: " . implode("\n", $output));
-            }
+            $this->fetchAndSaveDiff($patch, $mrInfo);
         } catch (\Exception $e) {
             throw new RuntimeException("Failed to process GitLab MR: " . $e->getMessage(), 0, $e);
         }
     }
 
-    private function savePatch(Patch $patch, string $diffOutput): void
+    private function shouldSkipDownload(Patch $patch): bool
     {
-        $patches_dir = sys_get_temp_dir() . '/composer-patches/';
-        $filename = uniqid($patches_dir) . ".patch";
-        if (!is_dir($patches_dir)) {
-            mkdir($patches_dir);
-        }
-
-        file_put_contents($filename, $diffOutput);
-        $patch->localPath = $filename;
-        $patch->sha256 = hash_file('sha256', $filename);
+        return !empty($patch->localPath)    // Don't need to re-download a patch if it has already been downloaded.
+            || !isset($patch->extra['gitlab'])
+            || empty($patch->url);
     }
 
-    private function getInstalledPackagePath(Patch $patch): string
+    private function createGitLabClient(): Client
     {
-        $package = $this->composer->getRepositoryManager()->getLocalRepository()->findPackage(
-            $patch->package,
-            '*'
-        );
-
-        if (!$package) {
-            throw new RuntimeException("Could not find installed package {$patch->package}");
+        $token = getenv('GITLAB_REPO_ACCESS_TOKEN');
+        if (empty($token)) {
+            throw new RuntimeException('GITLAB_REPO_ACCESS_TOKEN environment variable is not set');
         }
 
-        return $this->composer->getInstallationManager()->getInstallPath($package);
+        $this->token = $token;
+        $client = new Client();
+        $client->authenticate($this->token, Client::AUTH_HTTP_TOKEN);
+
+        return $client;
     }
 
-    private function parseGitLabUrl(string $url): array
+    private function parseGitLabUrl(string $url): GitLabMergeRequestInfo
     {
         if (!preg_match('#^https?://([^/]+)/([^/]+/[^/]+)/-/merge_requests/(\d+)#', $url, $matches)) {
             throw new RuntimeException("Invalid GitLab merge request URL: {$url}");
         }
 
-        return [
-            'host' => $matches[1],
-            'project_path' => $matches[2],
-            'mr_iid' => (int)$matches[3],
-        ];
+        return new GitLabMergeRequestInfo($matches[1], $matches[2], (int)$matches[3]);
     }
 
-    private function createGitLabClient(): Client
+    private function fetchAndSaveDiff(Patch $patch, GitLabMergeRequestInfo $mrInfo): void
     {
-        $client = new Client();
-        $this->token = getenv('GITLAB_REPO_ACCESS_TOKEN');
-        if (empty($this->token)) {
-            throw new RuntimeException('GITLAB_REPO_ACCESS_TOKEN environment variable is not set');
-        }
-        $client->authenticate($this->token, Client::AUTH_HTTP_TOKEN);
+        $gitRemoteContext = $this->createGitRemoteContext($patch, $mrInfo);
 
-        return $client;
+        $this->addRemoteAndFetchBranch($gitRemoteContext, $mrInfo);
+
+        $diffOutput = $this->createDiff($gitRemoteContext);
+        $this->savePatch($patch, $diffOutput);
+
+        $this->removeRemote($gitRemoteContext);
+    }
+
+    private function createGitRemoteContext(Patch $patch, GitLabMergeRequestInfo $mrInfo): GitRemoteContext
+    {
+        return (new GitRemoteContextFactory($this->client, $this->composer, $this->token))
+            ->create($patch, $mrInfo);
+    }
+
+    private function addRemoteAndFetchBranch(
+        GitRemoteContext $gitRemoteContext,
+        GitLabMergeRequestInfo $mrInfo
+    ): void {
+        $this->io->write(
+            "      - Fetching PR {$mrInfo->mergeRequestIid} from {$mrInfo->projectPath}",
+            true,
+            IOInterface::VERBOSE,
+        );
+
+        $cmd = sprintf(
+            'cd %s && (git remote rm %s 2>&1 || true) && git remote add %s %s 2>&1 && git fetch %s %s 2>&1',
+            escapeshellarg($gitRemoteContext->packagePath),
+            $gitRemoteContext->remoteName,
+            $gitRemoteContext->remoteName,
+            escapeshellarg($gitRemoteContext->authorizedRepoUrl),
+            $gitRemoteContext->remoteName,
+            escapeshellarg($gitRemoteContext->sourceBranch)
+        );
+
+        $this->runShellCommand($cmd, "Failed to add remote");
+    }
+
+    private function createDiff(GitRemoteContext $gitRemoteContext): string
+    {
+        $this->io->write("      - Building diff", true, IOInterface::VERBOSE);
+
+        $cmd = sprintf(
+            'cd %s && git diff ...%s/%s 2>&1',
+            escapeshellarg($gitRemoteContext->packagePath),
+            $gitRemoteContext->remoteName,
+            escapeshellarg($gitRemoteContext->sourceBranch),
+        );
+
+        // Get raw multiline string with all characters (including trailing spaces) intact
+        $diffOutput = shell_exec($cmd);
+
+        // Only to detect execution failures
+        $this->runShellCommand($cmd, "Failed to create diff");
+
+        return $diffOutput;
+    }
+
+    private function removeRemote(GitRemoteContext $gitRemoteContext): void
+    {
+        $cmd = sprintf(
+            'cd %s && git remote rm %s 2>&1',
+            escapeshellarg($gitRemoteContext->packagePath),
+            $gitRemoteContext->remoteName,
+        );
+        $this->runShellCommand($cmd, "Failed to drop remote");
+    }
+
+    private function runShellCommand(string $command, string $errorMessage): void
+    {
+        exec($command, $output, $returnCode);
+        if ($returnCode !== 0) {
+            throw new RuntimeException("$errorMessage: " . implode("\n", $output));
+        }
+    }
+
+    private function savePatch(Patch $patch, string $diff): void
+    {
+        $dir = sys_get_temp_dir() . '/composer-patches/';
+        if (!is_dir($dir)) {
+            mkdir($dir);
+        }
+
+        $filename = uniqid($dir) . ".patch";
+        file_put_contents($filename, $diff);
+
+        $patch->localPath = $filename;
+        $patch->sha256 = hash_file('sha256', $filename);
     }
 }
