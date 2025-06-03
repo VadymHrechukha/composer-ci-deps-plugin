@@ -27,4 +27,14 @@ class GitLabMergeRequestUrlParserTest extends TestCase
 
         $parser->parse('https://gitlab.example.com/vendor/package/merge_requests/42'); // invalid
     }
+
+    public function testParsesValidGitLabUrlWithSubgroups(): void
+    {
+        $parser = new GitLabMergeRequestUrlParser();
+        $info = $parser->parse('https://gitlab.com/group/subgroup/project/-/merge_requests/42');
+
+        $this->assertEquals('gitlab.com', $info->host);
+        $this->assertEquals('group/subgroup/project', $info->projectPath);
+        $this->assertEquals(42, $info->mergeRequestIid);
+    }
 }

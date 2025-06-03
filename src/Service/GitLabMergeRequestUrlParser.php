@@ -8,7 +8,7 @@ final class GitLabMergeRequestUrlParser
 {
     public function parse(string $url): GitLabMergeRequestInfo
     {
-        if (!preg_match('#^https?://([^/]+)/([^/]+/[^/]+)/-/merge_requests/(\d+)#', $url, $matches)) {
+        if (!preg_match('#^https?://([^/]+)/(.*?)/-/merge_requests/(\d+)#', $url, $matches)) {
             throw new RuntimeException("Invalid GitLab merge request URL: {$url}");
         }
 
