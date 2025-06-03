@@ -29,7 +29,7 @@ class GitLabPullRequestDownloader extends DownloaderBase
 
         $this->client = $this->createGitLabClient();
 
-        $mrInfo = $this->parseGitLabUrl($patch->url);
+        $mrInfo = (new GitLabMergeRequestUrlParser())->parse($patch->url);
         $this->client->setUrl("https://{$mrInfo->host}");
 
         try {
@@ -59,15 +59,6 @@ class GitLabPullRequestDownloader extends DownloaderBase
         $client->authenticate($this->token, Client::AUTH_HTTP_TOKEN);
 
         return $client;
-    }
-
-    private function parseGitLabUrl(string $url): GitLabMergeRequestInfo
-    {
-        if (!preg_match('#^https?://([^/]+)/([^/]+/[^/]+)/-/merge_requests/(\d+)#', $url, $matches)) {
-            throw new RuntimeException("Invalid GitLab merge request URL: {$url}");
-        }
-
-        return new GitLabMergeRequestInfo($matches[1], $matches[2], (int)$matches[3]);
     }
 
     private function fetchDiff(Patch $patch, GitLabMergeRequestInfo $mrInfo): string

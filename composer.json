@@ -19,11 +19,13 @@
       }
   ],
   "require-dev": {
-    "composer/composer": "^2.0"
+    "composer/composer": "^2.0",
+    "phpunit/phpunit": "^9.0"
   },
   "autoload": {
     "psr-4": {
-      "hiqdev\\ComposerCiDeps\\": "src/"
+      "hiqdev\\ComposerCiDeps\\": "src/",
+      "hiqdev\\ComposerCiDeps\\tests\\": "tests"
     }
   },
   "minimum-stability": "dev",
