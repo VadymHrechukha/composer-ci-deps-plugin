@@ -37,7 +37,8 @@ class GitLabPullRequestDownloader extends DownloaderBase
         $this->client->setUrl("https://{$mrInfo->host}");
 
         try {
-            $this->fetchAndSaveDiff($patch, $mrInfo);
+            $diff = $this->fetchDiff($patch, $mrInfo);
+            $this->savePatch($patch, $diff);
         } catch (\Exception $e) {
             throw new RuntimeException("Failed to process GitLab MR: " . $e->getMessage(), 0, $e);
         }
@@ -78,16 +79,14 @@ class GitLabPullRequestDownloader extends DownloaderBase
         return new GitLabMergeRequestInfo($matches[1], $matches[2], (int)$matches[3]);
     }
 
-    private function fetchAndSaveDiff(Patch $patch, GitLabMergeRequestInfo $mrInfo): void
+    private function fetchDiff(Patch $patch, GitLabMergeRequestInfo $mrInfo): string
     {
         $gitRemoteContext = $this->createGitRemoteContext($patch, $mrInfo);
-
         $this->addRemoteAndFetchBranch($gitRemoteContext, $mrInfo);
-
         $diffOutput = $this->createDiff($gitRemoteContext);
-        $this->savePatch($patch, $diffOutput);
-
         $this->gitShell->removeRemote($gitRemoteContext);
+
+        return $diffOutput;
     }
 
     private function createGitRemoteContext(Patch $patch, GitLabMergeRequestInfo $mrInfo): GitRemoteContext
