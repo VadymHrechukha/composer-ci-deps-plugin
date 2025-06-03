@@ -21,12 +21,8 @@ class GitLabPullRequestDownloader extends DownloaderBase
 
     private string $token = '';
 
-    private GitShellService $gitShell;
-
     public function download(Patch $patch): void
     {
-        $this->gitShell = $this->createGitShellService();
-
         if ($this->shouldSkipDownload($patch)) {
             return;
         }
@@ -42,11 +38,6 @@ class GitLabPullRequestDownloader extends DownloaderBase
         } catch (\Exception $e) {
             throw new RuntimeException("Failed to process GitLab MR: " . $e->getMessage(), 0, $e);
         }
-    }
-
-    private function createGitShellService(): GitShellService
-    {
-        return new GitShellService();
     }
 
     private function shouldSkipDownload(Patch $patch): bool
@@ -81,12 +72,19 @@ class GitLabPullRequestDownloader extends DownloaderBase
 
     private function fetchDiff(Patch $patch, GitLabMergeRequestInfo $mrInfo): string
     {
+        $gitShell = $this->createGitShellService();
         $gitRemoteContext = $this->createGitRemoteContext($patch, $mrInfo);
-        $this->addRemoteAndFetchBranch($gitRemoteContext, $mrInfo);
-        $diffOutput = $this->createDiff($gitRemoteContext);
-        $this->gitShell->removeRemote($gitRemoteContext);
+
+        $this->addRemoteAndFetchBranch($gitShell, $gitRemoteContext, $mrInfo);
+        $diffOutput = $this->createDiff($gitShell, $gitRemoteContext);
+        $gitShell->removeRemote($gitRemoteContext);
 
         return $diffOutput;
+    }
+
+    private function createGitShellService(): GitShellService
+    {
+        return new GitShellService();
     }
 
     private function createGitRemoteContext(Patch $patch, GitLabMergeRequestInfo $mrInfo): GitRemoteContext
@@ -96,6 +94,7 @@ class GitLabPullRequestDownloader extends DownloaderBase
     }
 
     private function addRemoteAndFetchBranch(
+        GitShellService $gitShell,
         GitRemoteContext $gitRemoteContext,
         GitLabMergeRequestInfo $mrInfo
     ): void {
@@ -105,14 +104,14 @@ class GitLabPullRequestDownloader extends DownloaderBase
             IOInterface::VERBOSE,
         );
 
-        $this->gitShell->addRemoteAndFetch($gitRemoteContext);
+        $gitShell->addRemoteAndFetch($gitRemoteContext);
     }
 
-    private function createDiff(GitRemoteContext $gitRemoteContext): string
+    private function createDiff(GitShellService $gitShell, GitRemoteContext $gitRemoteContext): string
     {
         $this->io->write("      - Building diff", true, IOInterface::VERBOSE);
 
-        return $this->gitShell->createDiff($gitRemoteContext);
+        return $gitShell->createDiff($gitRemoteContext);
     }
 
     private function savePatch(Patch $patch, string $diff): void
