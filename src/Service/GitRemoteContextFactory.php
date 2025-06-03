@@ -17,16 +17,15 @@ class GitRemoteContextFactory
 
     public function create(Patch $patch, GitLabMergeRequestInfo $mrInfo): GitRemoteContext
     {
-        $mergeRequest = $this->gitlabClient->mergeRequests()->show($mrInfo->projectPath, $mrInfo->mergeRequestIid);
-        if (!$mergeRequest) {
-            throw new RuntimeException(
-                "Merge request #{$mrInfo->mergeRequestIid} not found in {$mrInfo->projectPath}",
-            );
-        }
+        $mergeRequest = $this->getMergeRequestInfo($mrInfo);
 
         $sourceBranch = $mergeRequest['source_branch'];
         $sourceProjectId = $mergeRequest['source_project_id'];
         $project = $this->gitlabClient->projects()->show($sourceProjectId);
+
+        if (!$project || !isset($project['http_url_to_repo'])) {
+            throw new RuntimeException("Project {$sourceProjectId} not found or missing repository URL");
+        }
 
         $authorizedRepoUrl = $this->buildAuthorizedRepoUrl($project['http_url_to_repo']);
         $remoteName = 'mr_' . $mrInfo->mergeRequestIid;
@@ -38,6 +37,24 @@ class GitRemoteContextFactory
             $authorizedRepoUrl,
             $sourceBranch
         );
+    }
+
+    private function getMergeRequestInfo(GitLabMergeRequestInfo $mrInfo): array
+    {
+        $mergeRequest = $this->gitlabClient->mergeRequests()->show($mrInfo->projectPath, $mrInfo->mergeRequestIid);
+        if (!$mergeRequest) {
+            throw new RuntimeException(
+                "Merge request #{$mrInfo->mergeRequestIid} not found in {$mrInfo->projectPath}",
+            );
+        }
+
+        if (!isset($mergeRequest['source_branch'], $mergeRequest['source_project_id'])) {
+            throw new RuntimeException(
+                "Invalid merge request data: missing source_branch or source_project_id",
+            );
+        }
+
+        return $mergeRequest;
     }
 
     private function buildAuthorizedRepoUrl(string $httpUrl): string
