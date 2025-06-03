@@ -7,7 +7,7 @@ use cweagans\Composer\Patch;
 use Gitlab\Client;
 use RuntimeException;
 
-class GitRemoteContextFactory
+final class GitRemoteContextFactory
 {
     public function __construct(
         readonly private Client $gitlabClient,

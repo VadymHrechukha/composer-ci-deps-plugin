@@ -4,7 +4,7 @@ namespace hiqdev\ComposerCiDeps\Service;
 
 use RuntimeException;
 
-class GitShellService
+final class GitShellService
 {
     public function addRemoteAndFetch(GitRemoteContext $ctx): void
     {

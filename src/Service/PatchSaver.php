@@ -4,7 +4,7 @@ namespace hiqdev\ComposerCiDeps\Service;
 
 use cweagans\Composer\Patch;
 
-class PatchSaver
+final class PatchSaver
 {
     private string $baseDir;
 

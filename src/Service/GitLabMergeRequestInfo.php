@@ -2,7 +2,7 @@
 
 namespace hiqdev\ComposerCiDeps\Service;
 
-class GitLabMergeRequestInfo
+final class GitLabMergeRequestInfo
 {
     public function __construct(
         public readonly string $host,

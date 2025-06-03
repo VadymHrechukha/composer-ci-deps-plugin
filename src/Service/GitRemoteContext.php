@@ -2,7 +2,7 @@
 
 namespace hiqdev\ComposerCiDeps\Service;
 
-class GitRemoteContext
+final class GitRemoteContext
 {
     public function __construct(
         public readonly string $packagePath,
