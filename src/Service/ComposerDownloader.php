@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace hiqdev\ComposerCiDeps\Service;
 
+use cweagans\Composer\Downloader\ComposerDownloader as BaseComposerDownloader;
 use cweagans\Composer\Patch;
 
 /**
@@ -12,7 +13,7 @@ use cweagans\Composer\Patch;
  *
  * @author Dmytro Naumenko <d.naumenko.a@gmail.com>
  */
-class ComposerDownloader extends \cweagans\Composer\Downloader\ComposerDownloader
+class ComposerDownloader extends BaseComposerDownloader
 {
     public function download(Patch $patch): void
     {
@@ -39,13 +40,18 @@ class ComposerDownloader extends \cweagans\Composer\Downloader\ComposerDownloade
     {
         $rootDir = dirname($this->composer->getConfig()->get('vendor-dir'));
         $path = $rootDir . DIRECTORY_SEPARATOR . $url;
+        $realPath = realpath($path);
 
-        return file_exists($path) ? $path : null;
+        if ($realPath === false || !is_file($realPath) || !is_readable($realPath)) {
+            return null;
+        }
+
+        return $realPath;
     }
 
     private function copyToTempFile(string $sourcePath): string
     {
-        $tempPath = tempnam(sys_get_temp_dir(), 'composer-patch-') . '.patch';
+        $tempPath = tempnam(sys_get_temp_dir(), 'composer-patch-');
         copy($sourcePath, $tempPath);
 
         return $tempPath;
