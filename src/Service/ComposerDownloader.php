@@ -6,10 +6,9 @@ namespace hiqdev\ComposerCiDeps\Service;
 use cweagans\Composer\Patch;
 
 /**
- * Class ComposerDownloader is a wrapper for the original ComposerDownloader class,
- * as we need to change the order of downloaders by disabling the original one.
- *
- * Also adds support for local file patch paths (relative to the project root).
+ * Replaces the original ComposerDownloader to control downloader ordering —
+ * the original must be disabled so GitLabPullRequestDownloader runs first.
+ * Also adds support for patch paths local to the project root.
  *
  * @author Dmytro Naumenko <d.naumenko.a@gmail.com>
  */
@@ -21,9 +20,10 @@ class ComposerDownloader extends \cweagans\Composer\Downloader\ComposerDownloade
             return;
         }
 
-        $localPath = $this->resolveLocalPath($patch->url);
-        if ($localPath !== null) {
-            $patch->localPath = $localPath;
+        $sourcePath = $this->findLocalFile($patch->url);
+        if ($sourcePath !== null) {
+            $patch->localPath = $this->copyToTempFile($sourcePath);
+            $patch->sha256 = hash_file('sha256', $patch->localPath);
             return;
         }
 
@@ -35,11 +35,19 @@ class ComposerDownloader extends \cweagans\Composer\Downloader\ComposerDownloade
         return !empty($patch->localPath);
     }
 
-    private function resolveLocalPath(string $url): ?string
+    private function findLocalFile(string $url): ?string
     {
         $rootDir = dirname($this->composer->getConfig()->get('vendor-dir'));
         $path = $rootDir . DIRECTORY_SEPARATOR . $url;
 
         return file_exists($path) ? $path : null;
+    }
+
+    private function copyToTempFile(string $sourcePath): string
+    {
+        $tempPath = tempnam(sys_get_temp_dir(), 'composer-patch-') . '.patch';
+        copy($sourcePath, $tempPath);
+
+        return $tempPath;
     }
 }
